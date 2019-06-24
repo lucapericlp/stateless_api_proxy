@@ -1,55 +1,40 @@
 package magictoken
 
 import (
-	"bufio"
-	"crypto"
+	"../keys"
+	"crypto/rand"
 	"crypto/rsa"
-	"crypto/x509"
-	"encoding/pem"
+	"crypto/sha512"
 	"fmt"
-	"os"
+	"log"
 )
 
 type MagicToken struct {
 	Title string
 }
 
-type Keys struct {
-	pubKey  *crypto.PublicKey
-	privKey *rsa.PrivateKey
-}
-
-func loadKeys() *Keys {
-	privateKeyFile, err := os.Open(os.Getenv("MAGICTOKEN_PRIVATE_KEY"))
+func encrypt(ghToken *string, pubKey *rsa.PublicKey) string {
+	//fmt.Println(*ourKeys.PubKey, *ourKeys.PrivKey)
+	encryptedToken, err := rsa.EncryptOAEP(sha512.New(), rand.Reader, pubKey, []byte(*ghToken), []byte(""))
 	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
+		log.Fatalf("Encryption failed: %s", err)
 	}
-
-	//read in private key, also get public key
-	pemfileinfo, _ := privateKeyFile.Stat()
-	pembytes := make([]byte, pemfileinfo.Size()) //int64
-
-	buffer := bufio.NewReader(privateKeyFile)
-	_, err = buffer.Read(pembytes)
-
-	block, _ := pem.Decode(pembytes)
-	parseResult, _ := x509.ParsePKCS8PrivateKey(block.Bytes)
-	privKey := parseResult.(*rsa.PrivateKey)
-	pubKey := privKey.Public()
-	//fmt.Printf("%T %T", privKey, pubKey)
-	return &Keys{
-		pubKey:  &pubKey,
-		privKey: privKey,
-	}
+	return string(encryptedToken)
 }
 
-func (m *MagicToken) Encrypt() {
-	keys := loadKeys()
-	fmt.Println(*keys.pubKey, *keys.privKey)
+func decrypt(encryptedToken *string, privKey *rsa.PrivateKey) string {
+	decryptedToken, err := rsa.DecryptOAEP(sha512.New(), rand.Reader, privKey, []byte(*encryptedToken), []byte(""))
+	if err != nil {
+		log.Fatalf("Decryption failed: %s", err)
+	}
+	return string(decryptedToken)
 }
 
-func Create() *MagicToken {
+func Create(ghToken string, scopes [2]string) *MagicToken {
+	ourKeys := keys.LoadKeys()
+	ctToken := encrypt(&ghToken, ourKeys.PubKey)
+	ptToken := decrypt(&ctToken, ourKeys.PrivKey)
+	fmt.Println(ctToken, "\n", ptToken)
 	return &MagicToken{
 		Title: "Test",
 	}

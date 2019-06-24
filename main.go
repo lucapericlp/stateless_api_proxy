@@ -21,9 +21,8 @@ func main() {
 	h := home.NewHandlers(logger)
 
 	//	magictoken.Encrypt()
-	token := magictoken.Create()
-	fmt.Println("")
-	token.Encrypt()
+	token := magictoken.Create("abc123", [2]string{"1", "2"})
+	fmt.Println(token)
 
 	mux := http.NewServeMux()
 	h.SetupRoutes(mux)
