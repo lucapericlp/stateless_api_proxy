@@ -22,7 +22,7 @@ func main() {
 
 	//	magictoken.Encrypt()
 	token := magictoken.Create("abc123", [2]string{"1", "2"})
-	fmt.Println(token)
+	fmt.Println("Token created", token)
 
 	mux := http.NewServeMux()
 	h.SetupRoutes(mux)
