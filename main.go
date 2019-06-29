@@ -2,6 +2,7 @@ package main
 
 import (
 	"./home"
+	"./keys"
 	"./magictoken"
 	"./server"
 	"fmt"
@@ -20,9 +21,11 @@ func main() {
 	logger := log.New(os.Stdout, "test", log.LstdFlags|log.Lshortfile)
 	h := home.NewHandlers(logger)
 
-	//	magictoken.Encrypt()
-	token := magictoken.Create("abc123", [2]string{"1", "2"})
-	fmt.Println("Token created", token)
+	ourKeys := keys.LoadKeys()
+	proxyToken, _ := magictoken.Create("abc123", []string{"1", "2"}, ourKeys)
+
+	ptToken, _ := magictoken.Verify(proxyToken, ourKeys)
+	fmt.Println(ptToken)
 
 	mux := http.NewServeMux()
 	h.SetupRoutes(mux)
