@@ -22,7 +22,7 @@ func main() {
 	h := home.NewHandlers(logger)
 
 	ourKeys := keys.LoadKeys()
-	proxyToken, _ := magictoken.Create("abc123", []string{"1", "2"}, ourKeys)
+	proxyToken, _ := magictoken.Create("abc123", []string{"GET /user", "GET /repos"}, ourKeys)
 
 	ptToken, _ := magictoken.Verify(proxyToken, ourKeys)
 	fmt.Println(ptToken)
