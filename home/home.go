@@ -7,18 +7,25 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 )
 
 const msg = "Hello"
 
-type TokenPOST struct {
+type OriginalToken struct {
 	GithubToken string
 	Scopes      []string
 }
 
 type TokenResponse struct {
 	JWT string
+}
+
+//unfinished
+type ProxyToken struct {
+	a OriginalToken
+	b TokenResponse
 }
 
 type Handlers struct {
@@ -28,7 +35,7 @@ type Handlers struct {
 func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		decoder := json.NewDecoder(r.Body)
-		var data TokenPOST
+		var data OriginalToken
 		err := decoder.Decode(&data)
 		if err != nil {
 			h.logger.Fatal(err)
@@ -56,27 +63,24 @@ func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) Verify(next http.HandlerFunc) http.HandlerFunc {
 	//check validity of the token before passing to next step
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == "POST" {
-			decoder := json.NewDecoder(r.Body)
-			var data TokenResponse
-			err := decoder.Decode(&data)
-			if err != nil {
-				h.logger.Fatal(err)
-				http.Error(w, http.StatusText(http.StatusBadRequest), http.StatusBadRequest)
-			}
+		//what are they trying to do?
+		h.logger.Println(r.Method, r.URL.Path)
 
-			ourKeys := keys.LoadKeys()
-			ptToken, err := magictoken.Verify(data.JWT, ourKeys)
-			if err != nil {
-				http.Error(w, "Invalid proxy JWT supplied!", http.StatusBadRequest)
-				h.logger.Println(err)
-				return
-			}
-			//fmt.Println(ptToken, time.Now())
-			h.logger.Println(ptToken, time.Now())
-			next(w, r)
+		jwt := r.Header.Get("Authorization")
+		if strings.HasPrefix(jwt, "Bearer ") {
+			jwt = strings.TrimPrefix(jwt, "Bearer ")
 		}
-		http.Error(w, "POST Route", http.StatusBadRequest)
+
+		//can they? TODO: Add scopes return to Verify() in magictoken pkg so that we can validate their permissions.
+		ourKeys := keys.LoadKeys()
+		ptToken, err := magictoken.Verify(jwt, ourKeys)
+		if err != nil {
+			http.Error(w, "Invalid proxy JWT supplied!", http.StatusBadRequest)
+			h.logger.Println(err)
+			return
+		}
+		h.logger.Println(ptToken, time.Now())
+		next(w, r)
 		return
 	}
 }

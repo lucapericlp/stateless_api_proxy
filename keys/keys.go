@@ -17,7 +17,7 @@ type Keys struct {
 func LoadKeys() *Keys {
 	privateKeyFile, err := os.Open(os.Getenv("MAGICTOKEN_PRIVATE_KEY"))
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 		os.Exit(1)
 	}
 
