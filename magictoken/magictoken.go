@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"crypto/sha512"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"github.com/dgrijalva/jwt-go"
 	"log"
@@ -50,7 +51,7 @@ func Create(ghToken string, scopes []string, ourKeys *keys.Keys) (string, error)
 }
 
 func Verify(tokenString string, ourKeys *keys.Keys) (string, error) {
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+	token, _ := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		//not working but will look into
 		//	if _, ok := token.Method.(*jwt.SigningMethodRS256); !ok {
 		//		return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
@@ -70,5 +71,5 @@ func Verify(tokenString string, ourKeys *keys.Keys) (string, error) {
 		return string(ptToken), err
 	}
 
-	return "NOT VALID TOKEN", err
+	return "", errors.New("INVALID TOKEN")
 }
