@@ -5,7 +5,8 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
-	"fmt"
+	//"fmt"
+	"log"
 	"os"
 )
 

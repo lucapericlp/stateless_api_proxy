@@ -10,10 +10,17 @@ import (
 	"fmt"
 	"github.com/dgrijalva/jwt-go"
 	"log"
+	"regexp"
+	"strings"
 	"time"
 )
 
-//TO DO: Implement scope and token validation as middleware for api routes.
+type ProxyToken struct {
+	GithubToken string
+	Scopes      []string
+	Iat         int64
+	Exp         int64
+}
 
 func encrypt(ghToken *string, pubKey *rsa.PublicKey) ([]byte, error) {
 	encryptedToken, err := rsa.EncryptOAEP(sha512.New(), rand.Reader, pubKey, []byte(*ghToken), []byte(""))
@@ -39,10 +46,10 @@ func Create(ghToken string, scopes []string, ourKeys *keys.Keys) (string, error)
 	expiresAt := issuedAt.Add(time.Hour * 24 * 365)
 
 	jwtToken := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"iat":          issuedAt.Unix(),
-		"exp":          expiresAt.Unix(),
 		"github_token": encodedCT,
 		"scopes":       scopes,
+		"iat":          issuedAt.Unix(),
+		"exp":          expiresAt.Unix(),
 	})
 
 	tokenString, err := jwtToken.SignedString(ourKeys.PrivKey)
@@ -50,7 +57,7 @@ func Create(ghToken string, scopes []string, ourKeys *keys.Keys) (string, error)
 	return tokenString, err
 }
 
-func Verify(tokenString string, ourKeys *keys.Keys) (string, error) {
+func Verify(tokenString string, ourKeys *keys.Keys) (*ProxyToken, error) {
 	token, _ := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
 		//not working but will look into
 		//	if _, ok := token.Method.(*jwt.SigningMethodRS256); !ok {
@@ -60,6 +67,11 @@ func Verify(tokenString string, ourKeys *keys.Keys) (string, error) {
 	})
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		//token still valid? jwt claim seems to convert int64 to float64 which requires the type conversion here and at end of this statement.
+		if int64(claims["exp"].(float64)) < time.Now().Unix() {
+			return &ProxyToken{}, errors.New("EXPIRED TOKEN")
+		}
+
 		encodedCT := claims["github_token"].(string)
 		decodedCT, err := base64.StdEncoding.DecodeString(encodedCT)
 
@@ -68,8 +80,46 @@ func Verify(tokenString string, ourKeys *keys.Keys) (string, error) {
 		}
 
 		ptToken, err := decrypt(string(decodedCT), ourKeys.PrivKey)
-		return string(ptToken), err
+
+		scopesInterface := claims["scopes"].([]interface{})
+		scopes := make([]string, len(scopesInterface))
+		for i, v := range scopesInterface {
+			scopes[i] = fmt.Sprint(v)
+		}
+
+		proxyToken := &ProxyToken{
+			GithubToken: string(ptToken),
+			Scopes:      scopes,
+			Iat:         int64(claims["iat"].(float64)),
+			Exp:         int64(claims["exp"].(float64)),
+		}
+
+		return proxyToken, err
 	}
 
-	return "", errors.New("INVALID TOKEN")
+	return &ProxyToken{}, errors.New("INVALID TOKEN")
+}
+
+func (p *ProxyToken) ValidateRequest(method string, path string) bool {
+	validated := false
+	for _, scope := range p.Scopes {
+		scopeSplit := strings.Split(scope, " ")
+		allowedMethod, allowedPath := scopeSplit[0], scopeSplit[1]
+
+		if method != allowedMethod && allowedMethod != "*" {
+			continue
+		}
+
+		if !strings.HasPrefix(path, "/") {
+			prep := []string{"/"}
+			path = strings.Join(append(prep, path), "")
+		}
+
+		re := regexp.MustCompile(allowedPath)
+		if re.Match([]byte(path)) {
+			validated = true
+			break
+		}
+	}
+	return validated
 }

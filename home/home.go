@@ -8,10 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
-	"time"
 )
-
-const msg = "Hello"
 
 type OriginalToken struct {
 	GithubToken string
@@ -22,16 +19,11 @@ type TokenResponse struct {
 	JWT string
 }
 
-//unfinished
-type ProxyToken struct {
-	a OriginalToken
-	b TokenResponse
-}
-
 type Handlers struct {
 	logger *log.Logger
 }
 
+//Create JWT from provided GithubToken & Scopes along with issuedat and expiresat timestamps which then consume env priv and pub keys.
 func (h *Handlers) Create(w http.ResponseWriter, r *http.Request) {
 	if r.Method == "POST" {
 		decoder := json.NewDecoder(r.Body)
@@ -65,21 +57,38 @@ func (h *Handlers) Verify(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		//what are they trying to do?
 		h.logger.Println(r.Method, r.URL.Path)
+		method, path := r.Method, r.URL.Path
 
 		jwt := r.Header.Get("Authorization")
 		if strings.HasPrefix(jwt, "Bearer ") {
 			jwt = strings.TrimPrefix(jwt, "Bearer ")
+		} else {
+			http.Error(w, "JWT not supplied via Authorization header", http.StatusBadRequest)
+			h.logger.Println("JWT not in Auth header")
+			return
 		}
 
-		//can they? TODO: Add scopes return to Verify() in magictoken pkg so that we can validate their permissions.
 		ourKeys := keys.LoadKeys()
-		ptToken, err := magictoken.Verify(jwt, ourKeys)
+		proxyToken, err := magictoken.Verify(jwt, ourKeys)
 		if err != nil {
 			http.Error(w, "Invalid proxy JWT supplied!", http.StatusBadRequest)
 			h.logger.Println(err)
 			return
 		}
-		h.logger.Println(ptToken, time.Now())
+
+		authorisedScopes := strings.Join(proxyToken.Scopes, ", ")
+		if !proxyToken.ValidateRequest(method, path) {
+
+			var errMsg strings.Builder
+			errMsg.WriteString("Unauthorised scope according to Github proxy. Authorised scopes: ")
+			errMsg.WriteString(authorisedScopes)
+
+			http.Error(w, errMsg.String(), http.StatusUnauthorized)
+			h.logger.Println(errMsg.String())
+			return
+		}
+
+		h.logger.Printf("Verified %v req for %v with scopes %v", method, path, authorisedScopes)
 		next(w, r)
 		return
 	}
@@ -89,18 +98,6 @@ func (h *Handlers) Api(w http.ResponseWriter, r *http.Request) {
 	fmt.Println("Hit API")
 }
 
-func (h *Handlers) Files(w http.ResponseWriter, r *http.Request) {
-	http.ServeFile(w, r, r.URL.Path[1:])
-}
-
-//func (h *Handlers) Logger(next http.HandlerFunc) http.HandlerFunc {
-//	return func(w http.ResponseWriter, r *http.Request) {
-//		startTime := time.Now()
-//		defer h.logger.Printf("request for %s processed in %s\n", r.URL.Path, time.Now().Sub(startTime))
-//		next(w, r)
-//	}
-//}
-
 func NewHandlers(logger *log.Logger) *Handlers {
 	return &Handlers{
 		logger: logger,
@@ -108,9 +105,6 @@ func NewHandlers(logger *log.Logger) *Handlers {
 }
 
 func (h *Handlers) SetupRoutes(mux *http.ServeMux) {
-	//mux.HandleFunc("/", h.Logger(h.Home))
-	//mux.HandleFunc("/", h.Home)
 	mux.HandleFunc("/create", h.Create)
-	mux.HandleFunc("/api", h.Verify(h.Api))
-	mux.HandleFunc("/static/", h.Files) //h.Logger(h.Files))
+	mux.HandleFunc("/api/", h.Verify(h.Api))
 }
